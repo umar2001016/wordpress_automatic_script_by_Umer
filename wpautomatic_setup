@@ -1,0 +1,114 @@
+<?php
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $site_name = strtolower($_POST['site_name']);
+    $admin_user = $_POST['admin_user'];
+    $admin_password = $_POST['admin_password'];
+    $admin_email = $_POST['admin_email'];
+    $path = "C:/wamp64/www/$site_name";
+    $db_name = $site_name;
+
+    // Step 1: Create the directory for the site
+    if (!is_dir($path)) {
+        mkdir($path, 0777, true);
+    }
+
+    // Step 2: Download the latest version of WordPress
+    $wordpress_zip = file_get_contents('https://wordpress.org/latest.zip');
+    file_put_contents("$path/latest.zip", $wordpress_zip);
+
+    // Step 3: Extract WordPress
+    $zip = new ZipArchive;
+    $res = $zip->open("$path/latest.zip");
+    if ($res === TRUE) {
+        $zip->extractTo($path);
+        $zip->close();
+        echo 'WordPress extracted successfully.<br>';
+    } else {
+        echo 'Failed to extract WordPress.<br>';
+        exit;
+    }
+
+    // Step 4: Move WordPress files to root of the site directory
+    $wordpress_dir = "$path/wordpress";
+    $files = scandir($wordpress_dir);
+
+    foreach ($files as $file) {
+        if ($file != '.' && $file != '..') {
+            rename("$wordpress_dir/$file", "$path/$file");
+        }
+    }
+
+    // Remove the empty 'wordpress' directory and the zip file
+    rmdir($wordpress_dir);
+    unlink("$path/latest.zip");
+
+    echo "WordPress has been successfully installed at $path.<br>";
+
+    // Step 5: Create the MySQL database (if it doesn't already exist)
+    $mysqli = new mysqli("localhost", "root", "");
+
+    // Check connection
+    if ($mysqli->connect_error) {
+        die("Database connection failed: " . $mysqli->connect_error);
+    }
+
+    // Create database if it doesn't exist
+    $sql = "CREATE DATABASE IF NOT EXISTS $db_name";
+    if ($mysqli->query($sql) === TRUE) {
+        echo "Database $db_name created successfully.<br>";
+    } else {
+        echo "Error creating database: " . $mysqli->error;
+        exit;
+    }
+    $mysqli->close();
+
+    // Step 6: Create wp-config.php file
+    $config_file = "$path/wp-config.php";
+
+    $config_content = file_get_contents("$path/wp-config-sample.php");
+    $config_content = str_replace('database_name_here', $db_name, $config_content);
+    $config_content = str_replace('username_here', 'root', $config_content);
+    $config_content = str_replace('password_here', '', $config_content); // Assuming no password for WAMP
+
+    // Write the updated config file
+    file_put_contents($config_file, $config_content);
+
+    echo "wp-config.php file created successfully.<br>";
+
+    // Step 7: Install WordPress Programmatically (Automatic Final Setup)
+    define('WP_INSTALLING', true);
+    require_once("$path/wp-load.php");
+    require_once("$path/wp-admin/includes/upgrade.php");
+
+    global $wpdb;
+
+    // Set up the site title and admin credentials
+    $site_title = $_POST['site_name'];
+
+    // Run the installation
+    $result = wp_install($site_title, $admin_user, $admin_email, true, '', $admin_password);
+
+    if (is_wp_error($result)) {
+        echo 'Error during WordPress installation: ' . $result->get_error_message();
+    } else {
+        echo "WordPress site '{$site_title}' installed successfully with admin '{$admin_user}'.<br>";
+    }
+}
+?>
+
+<!-- HTML form to ask for the site details -->
+<form method="POST" action="">
+    <label for="site_name">Enter Site Name:</label>
+    <input type="text" id="site_name" name="site_name" required><br>
+
+    <label for="admin_user">Admin Username:</label>
+    <input type="text" id="admin_user" name="admin_user" required><br>
+
+    <label for="admin_password">Admin Password:</label>
+    <input type="password" id="admin_password" name="admin_password" required><br>
+
+    <label for="admin_email">Admin Email:</label>
+    <input type="email" id="admin_email" name="admin_email" required><br>
+
+    <button type="submit">Create and Install WordPress Site</button>
+</form>
